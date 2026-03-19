@@ -8,6 +8,8 @@
   <!-- Google Fonts & Icons -->
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700&display=swap" rel="stylesheet">
+  <!-- Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     tailwind.config = {
       darkMode: "class",
@@ -419,19 +421,15 @@
 
 <script>
   (function() {
-    // ---------- DATOS GLOBALES (simulados) ----------
-    let pedidos = [
-      { id: 1024, cliente: 'Marcos R.', bebida: 'Fernet Branca', estado: 'Pending', total: 1200 },
-      { id: 1023, cliente: 'Lucía M.', bebida: 'Negroni Special', estado: 'Preparing', total: 2400 },
-      { id: 1022, cliente: 'Kevin S.', bebida: 'Gin Tonic Pink', estado: 'Delivered', total: 1850 },
-      { id: 1021, cliente: 'Santi B.', bebida: 'Old Fashioned', estado: 'Delivered', total: 3100 },
-    ];
-    // Productos con imágenes (array de strings base64 o URLs)
-    let productos = [
-      { nombre: 'Palito de la Selva', precio: 1500, descripcion: 'El clásico rosa hecho trago.', imagenes: ['https://images.pexels.com/photos/5638252/pexels-photo-5638252.jpeg?auto=compress&cs=tinysrgb&w=600','https://images.pexels.com/photos/5967268/pexels-photo-5967268.jpeg?auto=compress&cs=tinysrgb&w=600','https://images.pexels.com/photos/6806478/pexels-photo-6806478.jpeg?auto=compress&cs=tinysrgb&w=600'] },
-      { nombre: 'Baileys Águila', precio: 1800, descripcion: 'Cremoso con chocolate premium.', imagenes: ['https://images.pexels.com/photos/6806478/pexels-photo-6806478.jpeg?auto=compress&cs=tinysrgb&w=600','https://images.pexels.com/photos/5967268/pexels-photo-5967268.jpeg?auto=compress&cs=tinysrgb&w=600','https://images.pexels.com/photos/5638252/pexels-photo-5638252.jpeg?auto=compress&cs=tinysrgb&w=600'] },
-      { nombre: 'Block', precio: 1700, descripcion: 'Pura potencia de maní y chocolate.', imagenes: ['https://images.pexels.com/photos/6790067/pexels-photo-6790067.jpeg?auto=compress&cs=tinysrgb&w=600','https://images.pexels.com/photos/6806478/pexels-photo-6806478.jpeg?auto=compress&cs=tinysrgb&w=600','https://images.pexels.com/photos/5638252/pexels-photo-5638252.jpeg?auto=compress&cs=tinysrgb&w=600'] },
-    ];
+    // ---------- CONFIGURACIÓN SUPABASE ----------
+    // IMPORTANTE: Reemplazar con tus credenciales de Supabase
+    const SUPABASE_URL = 'https://fmbkuvmtxdnaodsfkguy.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_MBE68P589fFwKzC-hUZ3tA_Qjsp2ms1';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // ---------- DATOS GLOBALES ----------
+    let pedidos = []; // se cargarán desde Supabase
+    let productos = []; // se cargarán desde Supabase
     let currentUserRole = null; // 'emp' o 'dueno'
 
     // Carrito de compras
@@ -582,7 +580,7 @@
     });
 
     // Confirmar pedido (checkout)
-    confirmarPedido.addEventListener('click', () => {
+    confirmarPedido.addEventListener('click', async () => {
       const nombre = document.getElementById('checkoutNombre').value.trim();
       const fecha = document.getElementById('checkoutFecha').value;
       const hora = document.getElementById('checkoutHora').value;
@@ -590,7 +588,21 @@
         alert('Completá todos los campos');
         return;
       }
-      // Aquí podrías enviar los datos a un servidor, pero simulamos éxito
+      // Guardar pedido en Supabase
+      const nuevoPedido = {
+        cliente: nombre,
+        fecha,
+        hora,
+        items: carrito,
+        total: carrito.reduce((acc, item) => acc + item.precio * item.cantidad, 0),
+        estado: 'Pending'
+      };
+      const { error } = await supabase.from('pedidos').insert([nuevoPedido]);
+      if (error) {
+        console.error('Error guardando pedido:', error);
+        alert('Error al guardar el pedido');
+        return;
+      }
       modalCheckout.classList.add('hidden');
       modalExito.classList.remove('hidden');
       // Vaciar carrito
@@ -774,6 +786,47 @@
       });
     });
 
+    // ---------- FUNCIONES SUPABASE ----------
+    async function cargarProductos() {
+      const { data, error } = await supabase.from('productos').select('*');
+      if (error) {
+        console.error('Error cargando productos:', error);
+        return;
+      }
+      productos = data.map(p => ({
+        ...p,
+        // Asegurar formato de imágenes
+        imagenes: p.imagenes || []
+      }));
+      renderProductosTienda();
+    }
+
+    async function cargarPedidos() {
+      const { data, error } = await supabase.from('pedidos').select('*');
+      if (error) {
+        console.error('Error cargando pedidos:', error);
+        return;
+      }
+      pedidos = data;
+    }
+
+    async function cargarConfig() {
+      const { data, error } = await supabase.from('config').select('*').eq('clave', 'hero_image').single();
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error cargando config:', error);
+        return;
+      }
+      if (data) {
+        heroImageSrc = data.valor;
+        heroImageElement.src = heroImageSrc;
+      }
+    }
+
+    // Llamar al inicio
+    cargarProductos();
+    cargarPedidos();
+    cargarConfig();
+
     // ---------- DASHBOARD ----------
     function renderDashboardTab(tab) {
       let html = '';
@@ -837,7 +890,7 @@
                   </thead>
                   <tbody class="divide-y divide-primary/5">
                     ${pedidos.slice(0,3).map(p => `
-                      <tr><td class="px-6 py-4 text-sm font-medium text-white">#${p.id}</td><td class="px-6 py-4 text-sm">${p.cliente}</td><td class="px-6 py-4 text-sm text-primary">${p.bebida}</td><td class="px-6 py-4"><span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-${p.estado==='Pending'?'amber':p.estado==='Preparing'?'blue':'emerald'}-900/30 text-${p.estado==='Pending'?'amber':p.estado==='Preparing'?'blue':'emerald'}-400">${p.estado}</span></td><td class="px-6 py-4 text-sm font-bold text-white">$${p.total}</td></tr>
+                      <tr><td class="px-6 py-4 text-sm font-medium text-white">#${p.id}</td><td class="px-6 py-4 text-sm">${p.cliente}</td><td class="px-6 py-4 text-sm text-primary">${p.bebida || 'Varios'}</td><td class="px-6 py-4"><span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-${p.estado==='Pending'?'amber':p.estado==='Preparing'?'blue':'emerald'}-900/30 text-${p.estado==='Pending'?'amber':p.estado==='Preparing'?'blue':'emerald'}-400">${p.estado}</span></td><td class="px-6 py-4 text-sm font-bold text-white">$${p.total}</td></tr>
                     `).join('')}
                   </tbody>
                 </table>
@@ -870,14 +923,14 @@
           <div class="bg-slate-900/40 rounded-xl border border-primary/5 overflow-hidden">
             <table class="w-full text-left">
               <thead class="bg-slate-800/50">
-                <tr><th class="px-6 py-4 text-xs font-bold uppercase text-slate-400">ID</th><th class="px-6 py-4 text-xs font-bold uppercase text-slate-400">Cliente</th><th class="px-6 py-4 text-xs font-bold uppercase text-slate-400">Bebida</th><th class="px-6 py-4 text-xs font-bold uppercase text-slate-400">Estado</th><th class="px-6 py-4 text-xs font-bold uppercase text-slate-400">Total</th><th class="px-6 py-4 text-xs font-bold uppercase text-slate-400">Acciones</th></tr>
+                <tr><th class="px-6 py-4 text-xs font-bold uppercase text-slate-400">ID</th><th class="px-6 py-4 text-xs font-bold uppercase text-slate-400">Cliente</th><th class="px-6 py-4 text-xs font-bold uppercase text-slate-400">Items</th><th class="px-6 py-4 text-xs font-bold uppercase text-slate-400">Estado</th><th class="px-6 py-4 text-xs font-bold uppercase text-slate-400">Total</th><th class="px-6 py-4 text-xs font-bold uppercase text-slate-400">Acciones</th></tr>
               </thead>
               <tbody class="divide-y divide-primary/5" id="tabla-pedidos-body">
                 ${pedidos.map(p => `
                   <tr>
                     <td class="px-6 py-4 text-sm font-medium text-white">#${p.id}</td>
                     <td class="px-6 py-4 text-sm">${p.cliente}</td>
-                    <td class="px-6 py-4 text-sm text-primary">${p.bebida}</td>
+                    <td class="px-6 py-4 text-sm text-primary">${Array.isArray(p.items) ? p.items.map(i => i.nombre).join(', ') : p.bebida || 'N/A'}</td>
                     <td class="px-6 py-4">
                       <select class="estado-pedido bg-slate-800 text-white rounded px-2 py-1 text-xs" data-id="${p.id}">
                         <option ${p.estado==='Pending'?'selected':''}>Pending</option>
@@ -949,16 +1002,23 @@
       // Re-asignar eventos después de renderizar
       if (tab === 'pedidos') {
         document.querySelectorAll('.estado-pedido').forEach(select => {
-          select.addEventListener('change', (e) => {
+          select.addEventListener('change', async (e) => {
             const id = parseInt(e.target.dataset.id);
             const nuevoEstado = e.target.value;
+            const { error } = await supabase.from('pedidos').update({ estado: nuevoEstado }).eq('id', id);
+            if (error) console.error('Error actualizando estado:', error);
             const pedido = pedidos.find(p => p.id === id);
             if (pedido) pedido.estado = nuevoEstado;
           });
         });
         document.querySelectorAll('.eliminar-pedido').forEach(btn => {
-          btn.addEventListener('click', (e) => {
+          btn.addEventListener('click', async (e) => {
             const id = parseInt(btn.dataset.id);
+            const { error } = await supabase.from('pedidos').delete().eq('id', id);
+            if (error) {
+              console.error('Error eliminando pedido:', error);
+              return;
+            }
             pedidos = pedidos.filter(p => p.id !== id);
             renderDashboardTab('pedidos');
           });
@@ -966,8 +1026,15 @@
       }
       if (tab === 'productos') {
         document.querySelectorAll('.eliminar-producto').forEach(btn => {
-          btn.addEventListener('click', (e) => {
+          btn.addEventListener('click', async (e) => {
             const nombre = btn.dataset.nombre;
+            const producto = productos.find(p => p.nombre === nombre);
+            if (!producto) return;
+            const { error } = await supabase.from('productos').delete().eq('id', producto.id);
+            if (error) {
+              console.error('Error eliminando producto:', error);
+              return;
+            }
             productos = productos.filter(p => p.nombre !== nombre);
             renderDashboardTab('productos');
             renderProductosTienda(); // actualizar tienda
@@ -980,7 +1047,6 @@
             document.getElementById('productoNombre').value = prod.nombre;
             document.getElementById('productoPrecio').value = prod.precio;
             document.getElementById('productoDescripcion').value = prod.descripcion;
-            // No podemos mostrar las imágenes en el preview fácilmente, pero dejamos el campo vacío y el usuario puede subir nuevas
             imagenesSeleccionadas = prod.imagenes || [];
             previewDiv.innerHTML = '';
             imagenesSeleccionadas.forEach(src => {
@@ -1015,10 +1081,13 @@
             const file = e.target.files[0];
             if (!file) return;
             const reader = new FileReader();
-            reader.onload = (event) => {
+            reader.onload = async (event) => {
               heroImageSrc = event.target.result;
               heroImageElement.src = heroImageSrc;
               document.getElementById('heroPreview').src = heroImageSrc;
+              // Guardar en Supabase
+              const { error } = await supabase.from('config').upsert({ clave: 'hero_image', valor: heroImageSrc });
+              if (error) console.error('Error guardando imagen principal:', error);
               mostrarToast('Imagen principal actualizada');
             };
             reader.readAsDataURL(file);
@@ -1081,7 +1150,7 @@
       modalProducto.classList.add('hidden');
     });
 
-    document.getElementById('guardarProducto').addEventListener('click', () => {
+    document.getElementById('guardarProducto').addEventListener('click', async () => {
       const nombre = document.getElementById('productoNombre').value.trim();
       const precio = parseFloat(document.getElementById('productoPrecio').value);
       const desc = document.getElementById('productoDescripcion').value.trim();
@@ -1093,9 +1162,22 @@
       let imagenes = imagenesSeleccionadas.length ? imagenesSeleccionadas : ['https://images.pexels.com/photos/5967268/pexels-photo-5967268.jpeg?auto=compress&cs=tinysrgb&w=600'];
       const nuevoProducto = { nombre, precio, descripcion: desc, imagenes };
       if (editIndex === -1) {
-        productos.push(nuevoProducto);
+        const { data, error } = await supabase.from('productos').insert([nuevoProducto]).select();
+        if (error) {
+          console.error('Error insertando producto:', error);
+          alert('Error al guardar producto');
+          return;
+        }
+        productos.push(data[0]);
       } else {
-        productos[editIndex] = nuevoProducto;
+        const productoOriginal = productos[editIndex];
+        const { error } = await supabase.from('productos').update(nuevoProducto).eq('id', productoOriginal.id);
+        if (error) {
+          console.error('Error actualizando producto:', error);
+          alert('Error al actualizar producto');
+          return;
+        }
+        productos[editIndex] = { ...productoOriginal, ...nuevoProducto };
       }
       modalProducto.classList.add('hidden');
       // Limpiar preview y campo file
@@ -1122,7 +1204,6 @@
 
     // Inicialmente mostrar tienda y productos
     dashboard.classList.add('hidden');
-    renderProductosTienda();
   })();
 </script>
 
